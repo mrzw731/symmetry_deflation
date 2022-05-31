@@ -28,9 +28,9 @@ def f(x):
     v = x[:, N_sites:]
 
     abs_uv_sqrd = u**2 + v**2
-    # Dirichlet
-    u_dot = -C * torch.cat([v[:,1:2]-2*v[:, 0:1], v[:, :-2]+v[:, 2:]-2*v[:, 1:-1], v[:, -2:-1]-2*v[:, -1:]], dim=1) - abs_uv_sqrd*v
-    v_dot = C * torch.cat([u[:,1:2]-2*u[:, 0:1], u[:, :-2]+u[:, 2:]-2*u[:, 1:-1], u[:, -2:-1]-2*u[:, -1:]], dim=1) + abs_uv_sqrd*u
+    # AL with periodic
+    u_dot = -C * torch.cat([v[:,1:2]+v[:, -1:], v[:, :-2]+v[:, 2:], v[:, -2:-1]+v[:, :1]], dim=1)*(1 + abs_uv_sqrd/(2*C))
+    v_dot = C * torch.cat([u[:,1:2]+u[:, -1:], u[:, :-2]+u[:, 2:], u[:, -2:-1]+u[:, :1]], dim=1)*(1+ abs_uv_sqrd/(2*C))
 
     # periodic
     #u_dot = -C * torch.cat([v[:,1:2]-2*v[:, 0:1]+v[:, -1:], v[:, :-2]+v[:, 2:]-2*v[:, 1:-1], v[:, -2:-1]-2*v[:, -1:]+v[:, :1]], dim=1) - abs_uv_sqrd*v
