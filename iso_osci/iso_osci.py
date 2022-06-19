@@ -192,7 +192,8 @@ for epoch in range(epochs):
 
     if epoch%log == 0:
         # compute test loss
-        inputs = torch.tensor(input_test, requires_grad=True, dtype=torch.float, device='cpu')
+        choices = np.random.choice(n_train, batch_size)
+        inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)                
         loss_test = compute_loss_h_all(f, [model_h1], inputs, False)
         losses_test_h1.append(loss_test.data.numpy())
         losses_train_h1.append(loss.data.numpy())
@@ -209,7 +210,8 @@ plt.legend(['Train loss', 'Test loss'])
 plt.yscale('log')
 plt.title('Learning H1')
 plt.xlabel('Number of Iterations')
-plt.show()
+plt.savefig('Learning_H1.png')
+plt.close()
 
 ###################### Training a network to minimize H2 #############################
 np.random.seed(1)
@@ -272,7 +274,8 @@ plt.legend(['Train loss', 'Test loss'])
 plt.yscale('log')
 plt.title('Learning H2')
 plt.xlabel('Number of Iterations')
-plt.show()
+plt.savefig('Learning_H2.png')
+plt.close()
 
 
 
@@ -338,7 +341,9 @@ plt.legend(['Train loss', 'Test loss'])
 plt.yscale('log')
 plt.title('Learning H3')
 plt.xlabel('Number of Iterations')
-plt.show()
+plt.savefig('Learning_H3.png')
+plt.close()
+
 
 
 ###################### Training a network to minimize H4 #############################
@@ -403,7 +408,8 @@ plt.legend(['Train loss', 'Test loss'])
 plt.yscale('log')
 plt.title('Learning H4')
 plt.xlabel('Number of Iterations')
-plt.show()
+plt.savefig('Learning_H4.png')
+plt.close()
 
     
 
