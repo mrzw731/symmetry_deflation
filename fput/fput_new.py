@@ -1,4 +1,5 @@
 import numpy as np
+import argparse
 import matplotlib.pyplot as plt
 import copy
 import torch
@@ -10,21 +11,37 @@ import os
 import pdb
 import matplotlib.pyplot as plt
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--C', type=float, default=.1)
+parser.add_argument('--N_sites', type=int, default=5)
+parser.add_argument('--batch_size', type=int, default=500)
+parser.add_argument('--width', type=int, default=400)
+parser.add_argument('--num_Hs', type=int, default=3)
+parser.add_argument('--epochs', type=int, default=1000)
+parser.add_argument('--lr_init', type=float, default=1e-3)
+parser.add_argument('--deflate', type=float, default=.5)
+args = parser.parse_args()
+
 seed = 0
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-C = .1
-N_sites = 4
-batch_size = 500                             # num of training samples per iteration
-width = 400                                  # width of the neural networks representing H's
-num_Hs = 3                                   # number of H's to be learned
-epochs_list = [1000, 2000, 2000]             # num of epochs to learn each H
+C = args.C
+N_sites = args.N_sites
+batch_size = args.batch_size                # num of training samples per iteration
+width = args.width                          # width of the neural networks representing H's
+num_Hs = args.num_Hs                        # number of H's to be learned
+epochs_list = num_Hs * [args.epochs]        # num of epochs to learn each H
 
-lr_decay_list = [x//2 for x in epochs_list]  # num of epochs after which lr is halfed
-lr_init = 1e-3                               # initial learning rate
+lr_decay_list = [x//2 for x in epochs_list] # num of epochs after which lr is halfed
+lr_init = args.lr_init                      # initial learning rate
 
-deflate = .5                                 # deflation power in the denominator
+deflate = args.deflate                      # deflation power in the denominator
+
+path = './N_sites=%d' % N_sites
+isExist = os.path.exists(path)
+if not isExist:
+    os.makedirs(path)
 
 
 ###################### Define vector field f(z) and z #############################
@@ -35,17 +52,16 @@ def f(x):
 
     # Periodic
     u_dot = v
-    v_dot = torch.cat([(u[:,1:2]+u[:,-1:]-u[:,0:1])*(1+C*u[:,1:2]+u[:,-1:]),
-                       (u[:,2:]+u[:,0:2]-u[:,1:-1])*(1+C*u[:,2:]+u[:,0:2]),
-                       (u[:,0:1]+u[:,-2:-1]-u[:,-1:])*(1+C*u[:,0:1]+u[:,-2:-1])], dim=1)
+    v_dot = torch.cat([(u[:,1:2]+u[:,-1:]-2*u[:,0:1])*(1+C*u[:,1:2]-C*u[:,-1:]),
+                       (u[:, 2:]+u[:, 0:-2]-2*u[:, 1:-1])*(1+C*u[:,2:]-C*u[:,0:-2]),
+                       (u[:,:1]+u[:,-2:-1]-2*u[:,-1:])*(1+C*u[:,:1]-C*u[:,-2:-1])], dim=1)
     return torch.cat([u_dot, v_dot], dim=1)
 
-    return torch.cat([u_dot, v_dot], dim=1)
 
 # z is input
-input_train = (np.random.rand(10000, 2*N_sites))
-input_val = (np.random.rand(10000, 2*N_sites))
-input_test = (np.random.rand(10000, 2*N_sites))
+input_train = (np.random.rand(100000, 2*N_sites)-.5)*8
+input_val = (np.random.rand(100000, 2*N_sites)-.5)*8
+input_test = (np.random.rand(100000, 2*N_sites)-.5)*8
 
 
 input_d = input_train.shape[1]
@@ -184,6 +200,8 @@ def sanity_check(f, models, inputs):
 cuda = torch.device('cuda')
 cpu = torch.device('cpu')
 learned_models = []
+losses_train_all = []
+losses_test_all = []
 
 for idx in range(num_Hs):
     np.random.seed(idx)
@@ -236,9 +254,22 @@ for idx in range(num_Hs):
     plt.plot(losses_test_now)
     plt.legend(['Train loss', 'Test loss'])
     plt.yscale('log')
-    plt.title('Learning H%d, C = %.1f, Num sites = %d' %(idx+1, C, N_sites))
+    plt.title('FPUT, learning H%d, C = %.1f, Num sites = %d' %(idx+1, C, N_sites))
     plt.xlabel('Number of Iterations')
-    plt.savefig('Learning_H%d_N=%d.png' % (idx+1, N_sites))
+    plt.savefig('N_sites=%d/Learning_H%d_N=%d.png' % (N_sites, idx+1, N_sites))
     plt.close()
 
+
+    losses_train_all.append(losses_train_now)
+    losses_test_all.append(losses_test_now)
+    
     learned_models.append(model_now)
+
+losses_train_all = np.array(losses_train_all)
+losses_test_all = np.array(losses_test_all)    
+np.save('N_sites=%d/losses_train_all.npy' % (N_sites), losses_train_all)
+np.save('N_sites=%d/losses_test_all.npy' % (N_sites), losses_test_all)
+
+
+
+
