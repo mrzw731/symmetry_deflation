@@ -38,7 +38,7 @@ lr_init = args.lr_init                      # initial learning rate
 
 deflate = args.deflate                      # deflation power in the denominator
 
-path = './N_sites=%d' % N_sites
+path = 'N_sites=%d_deflate_%.1f' % (N_sites, deflate)
 isExist = os.path.exists(path)
 if not isExist:
     os.makedirs(path)
@@ -255,7 +255,7 @@ for idx in range(num_Hs):
     plt.yscale('log')
     plt.title('TODA, learning H%d, C = %.1f, Num sites = %d' %(idx+1, C, N_sites))
     plt.xlabel('Number of Iterations')
-    plt.savefig('N_sites=%d/Learning_H%d_N=%d.png' % (N_sites, idx+1, N_sites))
+    plt.savefig('N_sites=%d_deflate_%.1f/Learning_H%d_N=%d.png' % (N_sites, deflate, idx+1, N_sites))
     plt.close()
 
 
@@ -266,8 +266,8 @@ for idx in range(num_Hs):
 
 losses_train_all = np.array(losses_train_all)
 losses_test_all = np.array(losses_test_all)    
-np.save('N_sites=%d/losses_train_all.npy' % (N_sites), losses_train_all)
-np.save('N_sites=%d/losses_test_all.npy' % (N_sites), losses_test_all)
+np.save('N_sites=%d_deflate_%.1f/losses_train_all.npy' % (N_sites, deflate), losses_train_all)
+np.save('N_sites=%d_deflate_%.1f/losses_test_all.npy' % (N_sites, deflate), losses_test_all)
 
 
 
