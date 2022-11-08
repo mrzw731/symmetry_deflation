@@ -20,6 +20,7 @@ parser.add_argument('--num_Hs', type=int, default=3)
 parser.add_argument('--epochs', type=int, default=1000)
 parser.add_argument('--lr_init', type=float, default=1e-3)
 parser.add_argument('--deflate', type=float, default=.5)
+parser.add_argument('--train_box', type=float, default=8.)
 args = parser.parse_args()
 
 seed = 0
@@ -37,8 +38,9 @@ lr_decay_list = [x//2 for x in epochs_list] # num of epochs after which lr is ha
 lr_init = args.lr_init                      # initial learning rate
 
 deflate = args.deflate                      # deflation power in the denominator
+train_box = args.train_box                  # training domain
 
-path = './N_sites=%d' % N_sites
+path = './N_sites=%d_box=%.1f' % (N_sites, train_box)
 isExist = os.path.exists(path)
 if not isExist:
     os.makedirs(path)
@@ -50,20 +52,27 @@ def f(x):
     v = x[:, N_sites:]
 
     abs_uv_sqrd = u**2 + v**2
-    # Dirichlet
-    #u_dot = -C * torch.cat([v[:,1:2]-2*v[:, 0:1], v[:, :-2]+v[:, 2:]-2*v[:, 1:-1], v[:, -2:-1]-2*v[:, -1:]], dim=1) - abs_uv_sqrd*v
-    #v_dot = C * torch.cat([u[:,1:2]-2*u[:, 0:1], u[:, :-2]+u[:, 2:]-2*u[:, 1:-1], u[:, -2:-1]-2*u[:, -1:]], dim=1) + abs_uv_sqrd*u
 
     # periodic
-    u_dot = -C * torch.cat([v[:,1:2]-2*v[:, 0:1]+v[:, -1:], v[:, :-2]+v[:, 2:]-2*v[:, 1:-1], v[:, -2:-1]-2*v[:, -1:]+v[:, :1]], dim=1) - abs_uv_sqrd*v
-    v_dot = C * torch.cat([u[:,1:2]-2*u[:, 0:1]+u[:, -1:], u[:, :-2]+u[:, 2:]-2*u[:, 1:-1], u[:, -2:-1]-2*u[:, -1:]+u[:, :1]], dim=1) + abs_uv_sqrd*u
+    u_np1 = torch.cat([u[:, 1:], u[:,0:1]], dim=1)
+    u_nm1 = torch.cat([u[:,-1:], u[:, :-1]], dim=1)
+    v_np1 = torch.cat([v[:, 1:], v[:,0:1]], dim=1)
+    v_nm1 = torch.cat([v[:,-1:], v[:, :-1]], dim=1)
+
+    u_dot = -C * (v_nm1 + v_np1 - 2*v) - abs_uv_sqrd * v
+    v_dot = C * (u_nm1 + u_np1 -2*u) + abs_uv_sqrd * u
+
+    
+    # periodic
+    #u_dot = -C * torch.cat([v[:,1:2]-2*v[:, 0:1]+v[:, -1:], v[:, :-2]+v[:, 2:]-2*v[:, 1:-1], v[:, -2:-1]-2*v[:, -1:]+v[:, :1]], dim=1) - abs_uv_sqrd*v
+    #v_dot = C * torch.cat([u[:,1:2]-2*u[:, 0:1]+u[:, -1:], u[:, :-2]+u[:, 2:]-2*u[:, 1:-1], u[:, -2:-1]-2*u[:, -1:]+u[:, :1]], dim=1) + abs_uv_sqrd*u
 
     return torch.cat([u_dot, v_dot], dim=1)
 
 # z is input
-input_train = (np.random.rand(100000, 2*N_sites)-.5)*8
-input_val = (np.random.rand(100000, 2*N_sites)-.5)*8
-input_test = (np.random.rand(100000, 2*N_sites)-.5)*8
+input_train = (np.random.rand(100000, 2*N_sites)-.5)*train_box
+input_val = (np.random.rand(100000, 2*N_sites)-.5)*train_box
+input_test = (np.random.rand(100000, 2*N_sites)-.5)*train_box
 
 
 input_d = input_train.shape[1]
@@ -258,7 +267,7 @@ for idx in range(num_Hs):
     plt.yscale('log')
     plt.title('DNLS, learning H%d, C = %.1f, Num sites = %d' %(idx+1, C, N_sites))
     plt.xlabel('Number of Iterations')
-    plt.savefig('N_sites=%d/Learning_H%d_N=%d.png' % (N_sites, idx+1, N_sites))
+    plt.savefig('N_sites=%d_box=%.1f/Learning_H%d_N=%d.png' % (N_sites, train_box, idx+1, N_sites))
     plt.close()
 
 
@@ -269,5 +278,5 @@ for idx in range(num_Hs):
 
 losses_train_all = np.array(losses_train_all)
 losses_test_all = np.array(losses_test_all)    
-np.save('N_sites=%d/losses_train_all.npy' % (N_sites), losses_train_all)
-np.save('N_sites=%d/losses_test_all.npy' % (N_sites), losses_test_all)
+np.save('N_sites=%d_box=%.1f/losses_train_all.npy' % (N_sites, train_box), losses_train_all)
+np.save('N_sites=%d_box=%.1f/losses_test_all.npy' % (N_sites, train_box), losses_test_all)
