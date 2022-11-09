@@ -1,4 +1,5 @@
 import numpy as np
+import argparse
 import matplotlib.pyplot as plt
 import copy
 import torch
@@ -10,17 +11,39 @@ import os
 import pdb
 import matplotlib.pyplot as plt
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--C', type=float, default=.1)
+parser.add_argument('--N_sites', type=int, default=4)
+parser.add_argument('--batch_size', type=int, default=500)
+parser.add_argument('--width', type=int, default=400)
+parser.add_argument('--num_Hs', type=int, default=3)
+parser.add_argument('--epochs', type=int, default=1000)
+parser.add_argument('--lr_init', type=float, default=1e-3)
+parser.add_argument('--deflate', type=float, default=.5)
+parser.add_argument('--train_box', type=float, default=8.)
+args = parser.parse_args()
+
 seed = 0
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-C = .1
-N_sites = 4
-batch_size = 500
-width = 800
+C = args.C
+N_sites = args.N_sites
+batch_size = args.batch_size                # num of training samples per iteration
+width = args.width                          # width of the neural networks representing H's
+num_Hs = args.num_Hs                        # number of H's to be learned
+epochs_list = num_Hs * [args.epochs]        # num of epochs to learn each H
 
-#torch.set_default_dtype(torch.float)
+lr_decay_list = [x//2 for x in epochs_list] # num of epochs after which lr is halfed
+lr_init = args.lr_init                      # initial learning rate
 
+deflate = args.deflate                      # deflation power in the denominator
+train_box = args.train_box                  # training domain
+
+path = './N_sites=%d_box=%.1f' % (N_sites, train_box)
+isExist = os.path.exists(path)
+if not isExist:
+    os.makedirs(path)    
 
 ###################### Define vector field f(z) and z #############################
 def f(x):
@@ -29,8 +52,16 @@ def f(x):
 
     abs_uv_sqrd = u**2 + v**2
     # AL with periodic
-    u_dot = -C * torch.cat([v[:,1:2]+v[:, -1:], v[:, :-2]+v[:, 2:], v[:, -2:-1]+v[:, :1]], dim=1)*(1 + abs_uv_sqrd/(2*C))
-    v_dot = C * torch.cat([u[:,1:2]+u[:, -1:], u[:, :-2]+u[:, 2:], u[:, -2:-1]+u[:, :1]], dim=1)*(1+ abs_uv_sqrd/(2*C))
+    u_np1 = torch.cat([u[:, 1:], u[:,0:1]], dim=1)
+    u_nm1 = torch.cat([u[:,-1:], u[:, :-1]], dim=1)
+    v_np1 = torch.cat([v[:, 1:], v[:,0:1]], dim=1)
+    v_nm1 = torch.cat([v[:,-1:], v[:, :-1]], dim=1)
+
+    u_dot = -C * (v_np1 + v_nm1)*(1 + abs_uv_sqrd/(2*C))
+    v_dot = C * (u_np1 + u_nm1)*(1 + abs_uv_sqrd/(2*C))
+    
+    #u_dot = -C * torch.cat([v[:,1:2]+v[:, -1:], v[:, :-2]+v[:, 2:], v[:, -2:-1]+v[:, :1]], dim=1)*(1 + abs_uv_sqrd/(2*C))
+    #v_dot = C * torch.cat([u[:,1:2]+u[:, -1:], u[:, :-2]+u[:, 2:], u[:, -2:-1]+u[:, :1]], dim=1)*(1+ abs_uv_sqrd/(2*C))
 
     # periodic
     #u_dot = -C * torch.cat([v[:,1:2]-2*v[:, 0:1]+v[:, -1:], v[:, :-2]+v[:, 2:]-2*v[:, 1:-1], v[:, -2:-1]-2*v[:, -1:]+v[:, :1]], dim=1) - abs_uv_sqrd*v
@@ -39,9 +70,9 @@ def f(x):
     return torch.cat([u_dot, v_dot], dim=1)
 
 # z is input
-input_train = (np.random.rand(100000, 2*N_sites)-.5)*8
-input_val = (np.random.rand(100000, 2*N_sites)-.5)*8
-input_test = (np.random.rand(100000, 2*N_sites)-.5)*8
+input_train = (np.random.rand(100000, 2*N_sites)-.5)*train_box
+input_val = (np.random.rand(100000, 2*N_sites)-.5)*train_box
+input_test = (np.random.rand(100000, 2*N_sites)-.5)*train_box
 
 
 input_d = input_train.shape[1]
@@ -109,7 +140,7 @@ def compute_loss_h_all(f, models, inputs, training=True):
         # denominator
         inner = (grad_H1_normalized * grad_H2_normalized).sum(1, keepdim=True)
         projected = grad_H2_normalized - inner*grad_H1_normalized
-        denominator = ((projected**2).sum(1))**3 # L2^4 of the projected vectors
+        denominator = ((projected**2).sum(1))**deflate # L2^4 of the projected vectors
         
         loss = (numerator/denominator).mean()
         
@@ -144,7 +175,7 @@ def compute_loss_h_all(f, models, inputs, training=True):
         project_inplane = (torch.matmul(inner, torch.transpose(Q, 1, 2))).view(num_samples, -1)
         projected = grad_H_last_normalized - project_inplane
 
-        denominator = ((projected**2).sum(1))**3 # L2^4 of the projected vectors
+        denominator = ((projected**2).sum(1))**deflate # L2^4 of the projected vectors
         
         loss = (numerator/denominator).mean()
         
@@ -173,230 +204,79 @@ def sanity_check(f, models, inputs):
     _, S, V = torch.svd(grad_Hs)
 
     return inner, S.data.numpy()
-    
 
-###################### Training a network to minimize H1 #############################
+
+###################### Training networks to minimize all H's #############################
 
 cuda = torch.device('cuda')
 cpu = torch.device('cpu')
+learned_models = []
+losses_train_all = []
+losses_test_all = []
 
+for idx in range(num_Hs):
+    np.random.seed(idx)
+    torch.manual_seed(idx)
 
-np.random.seed(0)
-torch.manual_seed(0)
+    model_now = FCNET(w=width).to(torch.float)
+    epochs = epochs_list[idx]
+    lr_decay_epoch = lr_decay_list[idx]
 
-model_h1 = FCNET(w=width).to(torch.float)
-epochs = 1000
-lr_decay_epoch = 500
+    n_train = input_train.shape[0]
+    lr = lr_init
+    optimizer_now = optim.Adam(model_now.parameters(), lr=lr)
 
-n_train = input_train.shape[0]
+    log = 1
+    losses_train_now = []
+    losses_test_now = []
 
-lr = 1e-3
-optimizer_h1 = optim.Adam(model_h1.parameters(), lr=lr)
-#optimizer_h1 = optim.NAdam(model_h1.parameters(), lr=lr)
+    for epoch in range(epochs):
 
-log = 1
-
-losses_train_h1 = []
-losses_test_h1 = []
-
-
-
-for epoch in range(epochs):
-
-    model_h1.train()
-    optimizer_h1.zero_grad()
-    choices = np.random.choice(n_train, batch_size)
-    inputs = torch.tensor(input_train[choices], requires_grad=True, dtype=torch.float, device='cpu')
-
-
-    if (epoch+1) % lr_decay_epoch == 0:
-        for opt_param in optimizer_h1.param_groups:
-            lr = lr * 0.5
-            opt_param['lr'] = lr
-
-    # computing loss
-    loss = compute_loss_h_all(f, [model_h1], inputs)
-
-
-    loss.backward()
-    optimizer_h1.step()
-
-    if epoch%log == 0:
-        # compute test loss
+        model_now.train()
+        optimizer_now.zero_grad()
         choices = np.random.choice(n_train, batch_size)
-        inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)        
-        #inputs = torch.tensor(input_test, requires_grad=True, dtype=torch.float, device='cpu')
-        loss_test = compute_loss_h_all(f, [model_h1], inputs, False)
-        losses_test_h1.append(loss_test.data.numpy())
-        losses_train_h1.append(loss.data.numpy())
-        print('Epoch:  %d | Loss_train: %.4f | Loss_test: %.4f' %(epoch, loss, loss_test))
+        inputs = torch.tensor(input_train[choices], requires_grad=True, dtype=torch.float, device='cpu')
+        if (epoch+1) % lr_decay_epoch == 0:
+            for opt_param in optimizer_now.param_groups:
+                lr = lr * 0.5
+                opt_param['lr'] = lr
+
+        # computing loss
+        loss = compute_loss_h_all(f, learned_models + [model_now], inputs)
+
+        loss.backward()
+        optimizer_now.step()
+
+        if epoch%log == 0:
+            # compute test loss
+            choices = np.random.choice(n_train, batch_size)
+            inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)        
+            #inputs = torch.tensor(input_test, requires_grad=True, dtype=torch.float, device='cpu')
+            loss_test = compute_loss_h_all(f, learned_models + [model_now], inputs, False)
+            losses_test_now.append(loss_test.data.numpy())
+            losses_train_now.append(loss.data.numpy())
+            print('Epoch:  %d | Loss_train: %.4f | Loss_test: %.4f' %(epoch, loss, loss_test))
         
-# setting fixing h1
-for p in model_h1.parameters():
-    p.requires_grad=False
+    # setting fixing h1
+    for p in model_now.parameters():
+        p.requires_grad=False
+
+    plt.plot(losses_train_now)
+    plt.plot(losses_test_now)
+    plt.legend(['Train loss', 'Test loss'])
+    plt.yscale('log')
+    plt.title('AL, learning H%d, C = %.1f, Num sites = %d' %(idx+1, C, N_sites))
+    plt.xlabel('Number of Iterations')
+    plt.savefig('N_sites=%d_box=%.1f/Learning_H%d_N=%d.png' % (N_sites, train_box, idx+1, N_sites))
+    plt.close()
 
 
-plt.plot(losses_train_h1)
-plt.plot(losses_test_h1)
-plt.legend(['Train loss', 'Test loss'])
-plt.yscale('log')
-plt.title('Learning H1, C = %.1f, Num sites = %d' %(C, N_sites))
-plt.xlabel('Number of Iterations')
-plt.savefig('Learning_H1_N=%d.png' % N_sites)
-plt.close()
+    losses_train_all.append(losses_train_now)
+    losses_test_all.append(losses_test_now)
+    
+    learned_models.append(model_now)
 
-
-# sanity check
-#choices = np.random.choice(n_train, 10)
-#inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)
-
-#inner, S = sanity_check(f, [model_h1, model_h1], inputs)
-
-
-
-###################### Training a network to minimize H2 #############################
-np.random.seed(2)
-torch.manual_seed(2)
-
-model_h2 = FCNET(w=width).to(torch.float)
-epochs = 5000
-lr_decay_epoch = 2500
-
-n_train = input_train.shape[0]
-
-lr = 1e-3
-optimizer_h2 = optim.Adam(model_h2.parameters(), lr=lr)
-#optimizer_h2 = optim.NAdam(model_h2.parameters(), lr=lr)
-
-log = 1
-
-losses_train_h2 = []
-losses_test_h2 = []
-
-
-
-for epoch in range(epochs):
-
-    model_h2.train()
-    optimizer_h2.zero_grad()
-    choices = np.random.choice(n_train, batch_size)
-    inputs = torch.tensor(input_train[choices], requires_grad=True, dtype=torch.float, device=cpu)
-
-
-    if (epoch+1) % lr_decay_epoch == 0:
-        for opt_param in optimizer_h2.param_groups:
-            lr = lr * 0.5
-            opt_param['lr'] = lr
-
-    # computing loss
-    loss = compute_loss_h_all(f, [model_h1, model_h2], inputs)
-
-
-    loss.backward()
-    optimizer_h2.step()
-
-    if epoch%log == 0:
-        # compute test loss
-        choices = np.random.choice(n_train, batch_size)
-        inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)
-        #inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float)
-        loss_test = compute_loss_h_all(f, [model_h1, model_h2], inputs, False)
-        losses_test_h2.append(loss_test.data.numpy())
-        losses_train_h2.append(loss.data.numpy())        
-        print('Epoch:  %d | Loss_train: %.4f | Loss_test: %.4f' %(epoch, loss, loss_test))
-        
-# setting fixing h2
-for p in model_h2.parameters():
-    p.requires_grad=False
-
-plt.plot(losses_train_h2)
-plt.plot(losses_test_h2)
-plt.legend(['Train loss', 'Test loss'])
-plt.yscale('log')
-plt.title('Learning H2, C = %.1f, Num sites = %d' %(C, N_sites))
-plt.xlabel('Number of Iterations')
-#plt.show()
-plt.savefig('Learning_H2_N=%d.png' % N_sites)
-plt.close()
-
-# sanity check
-
-#choices = np.random.choice(n_train, 10)
-#inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)
-
-#inner, S = sanity_check(f, [model_h1, model_h2], inputs)
-#pdb.set_trace()
-
-
-###################### Training a network to minimize H3 #############################
-np.random.seed(2)
-torch.manual_seed(2)
-
-model_h3 = FCNET(w=width).to(torch.float)
-epochs = 8000
-lr_decay_epoch = 4000
-
-n_train = input_train.shape[0]
-
-lr = 1e-3
-optimizer_h3 = optim.Adam(model_h3.parameters(), lr=lr)
-
-log = 1
-
-losses_train_h3 = []
-losses_test_h3 = []
-
-
-
-for epoch in range(epochs):
-
-    model_h3.train()
-    optimizer_h3.zero_grad()
-    choices = np.random.choice(n_train, batch_size)
-    inputs = torch.tensor(input_train[choices], requires_grad=True, dtype=torch.float, device=cpu)
-
-
-    if (epoch+1) % lr_decay_epoch == 0:
-        for opt_param in optimizer_h3.param_groups:
-            lr = lr * 0.5
-            opt_param['lr'] = lr
-
-    # computing loss
-    loss = compute_loss_h_all(f, [model_h1, model_h2, model_h3], inputs)
-
-
-
-    loss.backward()
-    optimizer_h3.step()
-
-    if epoch%log == 0:
-        # compute test loss
-        choices = np.random.choice(n_train, batch_size)
-        inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)
-        loss_test = compute_loss_h_all(f, [model_h1, model_h2, model_h3], inputs, False)
-        losses_test_h3.append(loss_test.data.numpy())
-        losses_train_h3.append(loss.data.numpy())        
-        print('Epoch:  %d | Loss_train: %.4f | Loss_test: %.4f' %(epoch, loss, loss_test))
-        
-# setting fixing h3
-for p in model_h3.parameters():
-    p.requires_grad=False
-
-
-plt.plot(losses_train_h3)
-plt.plot(losses_test_h3)
-plt.legend(['Train loss', 'Test loss'])
-plt.yscale('log')
-plt.title('Learning H3, C = %.1f, Num sites = %d' %(C, N_sites))
-plt.xlabel('Number of Iterations')
-#plt.show()
-plt.savefig('Learning_H3_N=%d.png' % N_sites)
-plt.close()
-
-# sanity check
-
-#choices = np.random.choice(n_train, 10)
-#inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)
-
-#inner, S = sanity_check(f, [model_h1, model_h2, model_h3], inputs)
-#pdb.set_trace()
+losses_train_all = np.array(losses_train_all)
+losses_test_all = np.array(losses_test_all)    
+np.save('N_sites=%d_box=%.1f/losses_train_all.npy' % (N_sites, train_box), losses_train_all)
+np.save('N_sites=%d_box=%.1f/losses_test_all.npy' % (N_sites, train_box), losses_test_all)

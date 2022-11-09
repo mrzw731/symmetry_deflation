@@ -12,23 +12,16 @@ import pdb
 import matplotlib.pyplot as plt
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--C', type=float, default=.1)
-parser.add_argument('--N_sites', type=int, default=4)
 parser.add_argument('--batch_size', type=int, default=500)
 parser.add_argument('--width', type=int, default=400)
-parser.add_argument('--num_Hs', type=int, default=3)
-parser.add_argument('--epochs', type=int, default=1000)
+parser.add_argument('--num_Hs', type=int, default=4)
+parser.add_argument('--epochs', type=int, default=5000)
 parser.add_argument('--lr_init', type=float, default=1e-3)
 parser.add_argument('--deflate', type=float, default=.5)
 parser.add_argument('--train_box', type=float, default=8.)
 args = parser.parse_args()
 
-seed = 0
-np.random.seed(seed)
-torch.manual_seed(seed)
 
-C = args.C
-N_sites = args.N_sites
 batch_size = args.batch_size                # num of training samples per iteration
 width = args.width                          # width of the neural networks representing H's
 num_Hs = args.num_Hs                        # number of H's to be learned
@@ -40,7 +33,7 @@ lr_init = args.lr_init                      # initial learning rate
 deflate = args.deflate                      # deflation power in the denominator
 train_box = args.train_box                  # training domain
 
-path = './N_sites=%d_box=%.1f' % (N_sites, train_box)
+path = './box=%.1f' % (train_box)
 isExist = os.path.exists(path)
 if not isExist:
     os.makedirs(path)
@@ -48,35 +41,26 @@ if not isExist:
 
 ###################### Define vector field f(z) and z #############################
 def f(x):
-    u = x[:, :N_sites]
-    v = x[:, N_sites:]
+    GM = 1
+    xx = x[:, 0] # x position
+    vx = x[:, 1] # x momentum
+    yy = x[:, 2]
+    vy = x[:, 3]
 
-    abs_uv_sqrd = u**2 + v**2
+    xx_dot = vx
+    px_dot = -GM*xx/(xx**2 + yy**2)**1.5
+    yy_dot = vy
+    py_dot = -GM*yy/(xx**2 + yy**2)**1.5
 
-    # periodic
-    u_np1 = torch.cat([u[:, 1:], u[:,0:1]], dim=1)
-    u_nm1 = torch.cat([u[:,-1:], u[:, :-1]], dim=1)
-    v_np1 = torch.cat([v[:, 1:], v[:,0:1]], dim=1)
-    v_nm1 = torch.cat([v[:,-1:], v[:, :-1]], dim=1)
-
-    u_dot = -C * (v_nm1 + v_np1 - 2*v) - abs_uv_sqrd * v
-    v_dot = C * (u_nm1 + u_np1 -2*u) + abs_uv_sqrd * u
-
-    
-    # periodic
-    #u_dot = -C * torch.cat([v[:,1:2]-2*v[:, 0:1]+v[:, -1:], v[:, :-2]+v[:, 2:]-2*v[:, 1:-1], v[:, -2:-1]-2*v[:, -1:]+v[:, :1]], dim=1) - abs_uv_sqrd*v
-    #v_dot = C * torch.cat([u[:,1:2]-2*u[:, 0:1]+u[:, -1:], u[:, :-2]+u[:, 2:]-2*u[:, 1:-1], u[:, -2:-1]-2*u[:, -1:]+u[:, :1]], dim=1) + abs_uv_sqrd*u
-
-    return torch.cat([u_dot, v_dot], dim=1)
+    return torch.transpose(torch.stack([xx_dot, px_dot, yy_dot, py_dot]),0,1)
 
 # z is input
-input_train = (np.random.rand(100000, 2*N_sites)-.5)*train_box
-input_val = (np.random.rand(100000, 2*N_sites)-.5)*train_box
-input_test = (np.random.rand(100000, 2*N_sites)-.5)*train_box
+input_train = (np.random.rand(100000, 4)-.5)*train_box
+input_val = (np.random.rand(100000, 4)-.5)*train_box
+input_test = (np.random.rand(100000, 4)-.5)*train_box
 
 
 input_d = input_train.shape[1]
-
 
 ###################### Define the network for H #############################
 
@@ -265,11 +249,10 @@ for idx in range(num_Hs):
     plt.plot(losses_test_now)
     plt.legend(['Train loss', 'Test loss'])
     plt.yscale('log')
-    plt.title('DNLS, learning H%d, C = %.1f, Num sites = %d' %(idx+1, C, N_sites))
+    plt.title('Kepler Learning H%d' %(idx+1))
     plt.xlabel('Number of Iterations')
-    plt.savefig('N_sites=%d_box=%.1f/Learning_H%d_N=%d.png' % (N_sites, train_box, idx+1, N_sites))
+    plt.savefig('box=%.1f/Learning_H%d.png' % (train_box, idx+1))
     plt.close()
-
 
     losses_train_all.append(losses_train_now)
     losses_test_all.append(losses_test_now)
@@ -278,5 +261,6 @@ for idx in range(num_Hs):
 
 losses_train_all = np.array(losses_train_all)
 losses_test_all = np.array(losses_test_all)    
-np.save('N_sites=%d_box=%.1f/losses_train_all.npy' % (N_sites, train_box), losses_train_all)
-np.save('N_sites=%d_box=%.1f/losses_test_all.npy' % (N_sites, train_box), losses_test_all)
+np.save('box=%.1f/losses_train_all.npy' % (train_box), losses_train_all)
+np.save('box=%.1f/losses_test_all.npy' % (train_box), losses_test_all)
+    

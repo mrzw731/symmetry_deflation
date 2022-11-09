@@ -1,4 +1,5 @@
 import numpy as np
+import argparse
 import matplotlib.pyplot as plt
 import copy
 import torch
@@ -10,26 +11,37 @@ import os
 import pdb
 import matplotlib.pyplot as plt
 
-seed = 0
-np.random.seed(seed)
-torch.manual_seed(seed)
+parser = argparse.ArgumentParser()
+parser.add_argument('--batch_size', type=int, default=500)
+parser.add_argument('--width', type=int, default=400)
+parser.add_argument('--num_Hs', type=int, default=4)
+parser.add_argument('--epochs', type=int, default=5000)
+parser.add_argument('--lr_init', type=float, default=1e-3)
+parser.add_argument('--deflate', type=float, default=.5)
+parser.add_argument('--train_box', type=float, default=8.)
+args = parser.parse_args()
 
-batch_size = 128                             # num of training samples per iteration
-width = 400                                  # width of the neural networks representing H's
-num_Hs = 4                                   # number of H's to be learned
-epochs_list = [400, 1000, 2000, 2000]        # num of epochs to learn each H
 
+batch_size = args.batch_size                # num of training samples per iteration
+width = args.width                          # width of the neural networks representing H's
+num_Hs = args.num_Hs                        # number of H's to be learned
+epochs_list = num_Hs * [args.epochs]        # num of epochs to learn each H
 
-lr_decay_list = [x//2 for x in epochs_list]  # num of epochs after which lr is halfed
-lr_init = 1e-3                               # initial learning rate
+lr_decay_list = [x//2 for x in epochs_list] # num of epochs after which lr is halfed
+lr_init = args.lr_init                      # initial learning rate
 
-deflate = .5                                 # deflation power in the denominator
+deflate = args.deflate                      # deflation power in the denominator
+train_box = args.train_box                  # training domain
 
+path = './box=%.1f' % (train_box)
+isExist = os.path.exists(path)
+if not isExist:
+    os.makedirs(path)
 
 
 ###################### Define vector field f(z) and z #############################
 def f(x):
-    m = 1; k1 = 1; k2 = 1
+    m = 1; k1 = 1; k2 = 4
     xx = x[:, 0] # x position
     px = x[:, 1] # x momentum
     yy = x[:, 2]
@@ -43,9 +55,9 @@ def f(x):
     return torch.transpose(torch.stack([xx_dot, px_dot, yy_dot, py_dot]),0,1)
 
 # z is input
-input_train = (np.random.rand(10000, 4)-.5)*4
-input_val = (np.random.rand(10000, 4)-.5)*4
-input_test = (np.random.rand(10000, 4)-.5)*4
+input_train = (np.random.rand(100000, 4)-.5)*train_box
+input_val = (np.random.rand(100000, 4)-.5)*train_box
+input_test = (np.random.rand(100000, 4)-.5)*train_box
 
 
 input_d = input_train.shape[1]
@@ -183,6 +195,8 @@ def sanity_check(f, models, inputs):
 cuda = torch.device('cuda')
 cpu = torch.device('cpu')
 learned_models = []
+losses_train_all = []
+losses_test_all = []
 
 for idx in range(num_Hs):
     np.random.seed(idx)
@@ -235,9 +249,18 @@ for idx in range(num_Hs):
     plt.plot(losses_test_now)
     plt.legend(['Train loss', 'Test loss'])
     plt.yscale('log')
-    plt.title('Learning H%d' %(idx+1))
+    plt.title('Aniso Osci Learning H%d' %(idx+1))
     plt.xlabel('Number of Iterations')
-    plt.savefig('Learning_H%d.png' % (idx+1))
+    plt.savefig('box=%.1f/Learning_H%d.png' % (train_box, idx+1))
     plt.close()
 
+    losses_train_all.append(losses_train_now)
+    losses_test_all.append(losses_test_now)
+    
     learned_models.append(model_now)
+
+losses_train_all = np.array(losses_train_all)
+losses_test_all = np.array(losses_test_all)    
+np.save('box=%.1f/losses_train_all.npy' % (train_box), losses_train_all)
+np.save('box=%.1f/losses_test_all.npy' % (train_box), losses_test_all)
+    
