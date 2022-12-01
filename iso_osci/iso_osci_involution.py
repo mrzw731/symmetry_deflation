@@ -33,7 +33,7 @@ lr_init = args.lr_init                      # initial learning rate
 deflate = args.deflate                      # deflation power in the denominator
 train_box = args.train_box                  # training domain
 
-path = './involution_box=%.1f' % (train_box)
+path = './involution_box=%.1f_deflate=%.1f' % (train_box, deflate)
 isExist = os.path.exists(path)
 if not isExist:
     os.makedirs(path)
@@ -280,7 +280,7 @@ for idx in range(num_Hs):
     plt.yscale('log')
     plt.title('Iso Osci Learning H%d' %(idx+1))
     plt.xlabel('Number of Iterations')
-    plt.savefig('involution_box=%.1f/Learning_H%d.png' % (train_box, idx+1))
+    plt.savefig(path+'/Learning_H%d.png' % (idx+1))
     plt.close()
 
     losses_train_all.append(losses_train_now)
@@ -290,6 +290,6 @@ for idx in range(num_Hs):
 
 losses_train_all = np.array(losses_train_all)
 losses_test_all = np.array(losses_test_all)    
-np.save('involution_box=%.1f/losses_train_all.npy' % (train_box), losses_train_all)
-np.save('involution_box=%.1f/losses_test_all.npy' % (train_box), losses_test_all)
+np.save(path+'/losses_train_all.npy', losses_train_all)
+np.save(path+'/losses_test_all.npy', losses_test_all)
     

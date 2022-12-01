@@ -17,7 +17,7 @@ parser.add_argument('--width', type=int, default=400)
 parser.add_argument('--num_Hs', type=int, default=12)
 parser.add_argument('--epochs', type=int, default=5000)
 parser.add_argument('--lr_init', type=float, default=1e-3)
-parser.add_argument('--deflate', type=float, default=1)
+parser.add_argument('--deflate', type=float, default=.5)
 parser.add_argument('--train_box', type=float, default=8.)
 args = parser.parse_args()
 
@@ -33,7 +33,7 @@ lr_init = args.lr_init                      # initial learning rate
 deflate = args.deflate                      # deflation power in the denominator
 train_box = args.train_box                  # training domain
 
-path = './involution_box=%.1f_deflate_%.1f' % (train_box, deflate)
+path = './involution_box=%.1f_deflate=%.1f' % (train_box, deflate)
 isExist = os.path.exists(path)
 if not isExist:
     os.makedirs(path)
@@ -301,7 +301,7 @@ for idx in range(num_Hs):
     plt.yscale('log')
     plt.title('Three body Learning H%d' %(idx+1))
     plt.xlabel('Number of Iterations')
-    plt.savefig('involution_box=%.1f_deflate_%.1f/Learning_H%d.png' % (train_box, deflate, idx+1))
+    plt.savefig(path+'/Learning_H%d.png' % (idx+1))
     plt.close()
 
     losses_train_all.append(losses_train_now)
@@ -311,6 +311,5 @@ for idx in range(num_Hs):
 
 losses_train_all = np.array(losses_train_all)
 losses_test_all = np.array(losses_test_all)    
-np.save('involution_box=%.1f_deflate_%.1finvolution_box=%.1f/losses_train_all.npy' % (train_box, deflate), losses_train_all)
-np.save('involution_box=%.1f_deflate_%.1f/losses_test_all.npy' % (train_box, deflate), losses_test_all)
-    
+np.save(path+'/losses_train_all.npy', losses_train_all)
+np.save(path+'/losses_test_all.npy', losses_test_all)    
