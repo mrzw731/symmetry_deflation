@@ -68,9 +68,9 @@ def f(x):
     return torch.cat([u_dot, v_dot], dim=1)
 
 # z is input
-input_train = (np.random.rand(100000, 2*N_sites)-.5)*train_box
-input_val = (np.random.rand(100000, 2*N_sites)-.5)*train_box
-input_test = (np.random.rand(100000, 2*N_sites)-.5)*train_box
+input_train = (np.random.rand(1000000, 2*N_sites)-.5)*train_box
+input_val = (np.random.rand(1000000, 2*N_sites)-.5)*train_box
+input_test = (np.random.rand(1000000, 2*N_sites)-.5)*train_box
 
 
 input_d = input_train.shape[1]
