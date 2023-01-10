@@ -60,7 +60,7 @@ def f(x):
     v_nm1 = torch.cat([v[:,-1:], v[:, :-1]], dim=1)    
 
     u_dot = v
-    v_dot = u_np1 + u_nm1 - 2*u
+    v_dot = -(u-u_nm1) + .5 * (u-u_nm1)**2 + (u_np1 - u) - .5 * (u_np1-u)**2
     
     return torch.cat([u_dot, v_dot], dim=1)
 
