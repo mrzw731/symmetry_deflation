@@ -10,6 +10,8 @@ from torch.autograd import Variable
 import os
 import pdb
 import matplotlib.pyplot as plt
+import scipy.stats as stats
+import matplotlib
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type=int, default=500)
@@ -293,3 +295,74 @@ losses_test_all = np.array(losses_test_all)
 np.save(path+'/losses_train_all.npy', losses_train_all)
 np.save(path+'/losses_test_all.npy', losses_test_all)
     
+models = nn.ModuleList(learned_models)
+torch.save(models, path+'/models.pth')
+
+
+
+###################### Calculating correlation #############################
+
+# Known conservation laws
+
+def gt_func_H1(x):
+    """
+    Known H1(xx, yy, px, py) = (xx^2 + px^2)
+    """
+    xx = x[:, 0] # x position
+    yy = x[:, 1] # y position
+    px = x[:, 2] # x momentum
+    py = x[:, 3] # y momentum
+
+    return xx**2 + px**2
+
+def gt_func_H2(x):
+    """
+    Known H2(xx, yy, px, py) = (yy^2 + py^2)
+    """
+    xx = x[:, 0] # x position
+    yy = x[:, 1] # y position
+    px = x[:, 2] # x momentum
+    py = x[:, 3] # y momentum
+
+    return yy**2 + py**2
+
+def gt_func_H3(x):
+    """
+    Known H3(xx, yy, px, py) = xx * py - yy * px
+    """
+    xx = x[:, 0] # x position
+    yy = x[:, 1] # y position
+    px = x[:, 2] # x momentum
+    py = x[:, 3] # y momentum
+
+    return xx * py - yy * px
+
+
+choices = np.random.choice(n_train, batch_size)
+inputs = torch.tensor(input_test[choices], requires_grad=True, dtype=torch.float, device=cpu)        
+gt_Hs = np.vstack([gt_func_H1(inputs).data.numpy(), gt_func_H2(inputs).data.numpy(), gt_func_H3(inputs).data.numpy()]) # shape is 3x500
+gt_Hs_name = [r'$H_1 = q_1^2 + p_1^2$', r'$H_2 = q_2^2 + p_2^2$', r'$H_3 = q_1 p_2 - q_2 p_1$']
+
+
+learned_Hs = [models[idx](inputs).data.numpy().reshape(-1) for idx in np.arange(2)]
+learned_Hs = np.vstack(learned_Hs) # shape is 2x500
+learned_Hs_name = [r'$I_1(\cdot; \theta_1)$', r'$I_2(\cdot; \theta_2)$']
+
+
+
+for ii in np.arange(len(gt_Hs)):
+    for jj in np.arange(len(learned_Hs)):
+        gt_H_now = gt_Hs[ii]
+        learned_H_now = learned_Hs[jj]
+        fig, ax = plt.subplots()
+        plt.scatter(gt_H_now, learned_H_now)
+        r, p = stats.pearsonr(gt_H_now, learned_H_now)
+        plt.text(.01, .99, r'$R^2$ = {:.2f}'.format(r**2), ha='left', va='top', transform=ax.transAxes, fontsize=14)
+        
+        plt.xlabel('Ground-truth conservation law: ' + gt_Hs_name[ii], fontsize=14)
+        plt.ylabel('Learned conservation law: ' +  learned_Hs_name[jj], fontsize=14)
+        plt.savefig('correlation_'+str(ii)+str(jj)+'.svg')
+
+    
+
+
