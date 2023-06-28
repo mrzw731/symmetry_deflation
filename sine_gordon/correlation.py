@@ -10,6 +10,8 @@ from torch.autograd import Variable
 import os
 import pdb
 import matplotlib.pyplot as plt
+import scipy.stats as stats
+import matplotlib
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--C', type=float, default=.1)
